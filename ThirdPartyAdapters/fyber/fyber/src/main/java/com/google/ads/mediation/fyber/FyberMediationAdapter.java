@@ -366,26 +366,20 @@ public class FyberMediationAdapter extends Adapter
       @Override
       public void onAdExpanded(InneractiveAdSpot inneractiveAdSpot) {
         super.onAdExpanded(inneractiveAdSpot);
+        //balanced in onAdCollapsed
         mMediationBannerListener.onAdOpened(FyberMediationAdapter.this);
       }
 
       @Override
       public void onAdCollapsed(InneractiveAdSpot inneractiveAdSpot) {
         super.onAdCollapsed(inneractiveAdSpot);
+        //balanced in onAdExpanded
         mMediationBannerListener.onAdClosed(FyberMediationAdapter.this);
       }
 
       @Override
       public void onAdClicked(InneractiveAdSpot adSpot) {
         mMediationBannerListener.onAdClicked(FyberMediationAdapter.this);
-        //we call ad opened since we open an "overlay" - our internal browser activity.
-        mMediationBannerListener.onAdOpened(FyberMediationAdapter.this);
-      }
-
-      @Override
-      public void onAdWillCloseInternalBrowser(InneractiveAdSpot inneractiveAdSpot) {
-        super.onAdWillCloseInternalBrowser(inneractiveAdSpot);
-        mMediationBannerListener.onAdClosed(FyberMediationAdapter.this);
       }
 
       @Override
