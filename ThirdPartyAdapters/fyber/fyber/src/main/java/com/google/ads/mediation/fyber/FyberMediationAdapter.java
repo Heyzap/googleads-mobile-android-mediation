@@ -8,19 +8,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.RelativeLayout;
 import androidx.annotation.NonNull;
-import com.fyber.inneractive.sdk.config.IAConfigManager;
-import com.fyber.inneractive.sdk.external.InneractiveAdManager;
-import com.fyber.inneractive.sdk.external.InneractiveAdRequest;
-import com.fyber.inneractive.sdk.external.InneractiveAdSpot;
-import com.fyber.inneractive.sdk.external.InneractiveAdSpotManager;
-import com.fyber.inneractive.sdk.external.InneractiveAdViewEventsListener;
-import com.fyber.inneractive.sdk.external.InneractiveAdViewEventsListenerAdapter;
-import com.fyber.inneractive.sdk.external.InneractiveAdViewUnitController;
-import com.fyber.inneractive.sdk.external.InneractiveErrorCode;
-import com.fyber.inneractive.sdk.external.InneractiveFullscreenAdEventsListener;
-import com.fyber.inneractive.sdk.external.InneractiveFullscreenAdEventsListenerAdapter;
-import com.fyber.inneractive.sdk.external.InneractiveFullscreenUnitController;
-import com.fyber.inneractive.sdk.external.InneractiveMediationName;
+import com.fyber.inneractive.sdk.external.*;
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.AdSize;
 import com.google.android.gms.ads.mediation.Adapter;
@@ -108,8 +96,8 @@ public class FyberMediationAdapter extends Adapter
   /**
    * Only rewarded ads are implemented using the new Adapter interface.
    */
-  public void loadRewardedAd(MediationRewardedAdConfiguration configuration,
-      MediationAdLoadCallback<MediationRewardedAd, MediationRewardedAdCallback> callback) {
+  public void loadRewardedAd(final MediationRewardedAdConfiguration configuration,
+                             final MediationAdLoadCallback<MediationRewardedAd, MediationRewardedAdCallback> callback) {
     // Sometimes loadRewardedAd is called before initialize is called.
 
     String keyAppID = configuration.getServerParameters().getString(KEY_APP_ID);
@@ -118,11 +106,21 @@ public class FyberMediationAdapter extends Adapter
       callback.onFailure(logMessage);
       return;
     }
-    InneractiveAdManager.initialize(configuration.getContext(), keyAppID);
-
-    FyberRewardedVideoRenderer rewardedVideoRenderer =
-        new FyberRewardedVideoRenderer(configuration, callback);
-    rewardedVideoRenderer.render();
+    //the callback will return immediately with "SUCCESS" if already initialized.
+    InneractiveAdManager.initialize(configuration.getContext(), keyAppID, new OnFyberMarketplaceInitializedListener() {
+      @Override
+      public void onFyberMarketplaceInitialized(FyberInitStatus fyberInitStatus) {
+        //Special note regarding the FAILED status - the SDK will retry to initialize itself when an ad request is being made
+        //So we ignore that status and let the ad request continue.
+        if (fyberInitStatus == FyberInitStatus.FAILED_NO_KITS_DETECTED || fyberInitStatus == FyberInitStatus.INVALID_APP_ID) {
+          callback.onFailure(String.format("Fyber Marketplace has failed to initialize - %s", fyberInitStatus));
+        } else {
+          FyberRewardedVideoRenderer rewardedVideoRenderer =
+                  new FyberRewardedVideoRenderer(configuration, callback);
+          rewardedVideoRenderer.render();
+        }
+      }
+    });
   }
 
   @Override
@@ -131,7 +129,7 @@ public class FyberMediationAdapter extends Adapter
       List<MediationConfiguration> mediationConfigurations) {
     // Initialize only once.
     if (InneractiveAdManager.wasInitialized()) {
-      waitForInitializationStatusAndReport(completionCallback);
+      completionCallback.onInitializationSucceeded();
       return;
     }
 
@@ -167,31 +165,17 @@ public class FyberMediationAdapter extends Adapter
           KEY_APP_ID, appIdForInitialization, appIdForInitialization);
       Log.w(TAG, message);
     }
-    InneractiveAdManager.initialize(context, appIdForInitialization);
-    waitForInitializationStatusAndReport(completionCallback);
-  }
 
-  /**
-   * A helper for checking out Fyber's initialization status.
-   *
-   * @param completionCallback AdMob's initialization callback.
-   */
-  private void waitForInitializationStatusAndReport(
-      final @NonNull InitializationCompleteCallback completionCallback) {
-
-    // If the Fyber SDK has already initialized, this method should return immediately and
-    // completionCallback will be invoked.
-    IAConfigManager.addListener(new IAConfigManager.OnConfigurationReadyAndValidListener() {
+    InneractiveAdManager.initialize(context, appIdForInitialization, new OnFyberMarketplaceInitializedListener() {
       @Override
-      public void onConfigurationReadyAndValid(IAConfigManager iaConfigManager,
-          boolean success, Exception e) {
-        if (success) {
-          completionCallback.onInitializationSucceeded();
+      public void onFyberMarketplaceInitialized(FyberInitStatus fyberInitStatus) {
+        //Special note regarding the FAILED status - the SDK will retry to initialize itself when an ad request is being made
+        //So we ignore that status and let the ad request continue.
+        if (fyberInitStatus == FyberInitStatus.FAILED_NO_KITS_DETECTED || fyberInitStatus == FyberInitStatus.INVALID_APP_ID) {
+          completionCallback.onInitializationFailed(String.format("Fyber Marketplace SDK initialization failed, status - %s", fyberInitStatus));
         } else {
-          completionCallback.onInitializationFailed("Fyber SDK initialization failed.");
+          completionCallback.onInitializationSucceeded();
         }
-
-        IAConfigManager.removeListener(this);
       }
     });
   }
@@ -248,16 +232,28 @@ public class FyberMediationAdapter extends Adapter
       return;
     }
 
-    InneractiveAdManager.initialize(context, keyAppId);
-
     // Check that we got a valid Spot ID from the server.
-    String spotId = serverParameters.getString(FyberMediationAdapter.KEY_SPOT_ID);
+    final String spotId = serverParameters.getString(FyberMediationAdapter.KEY_SPOT_ID);
     if (TextUtils.isEmpty(spotId)) {
       mMediationBannerListener.onAdFailedToLoad(this, AdRequest.ERROR_CODE_INVALID_REQUEST);
       Log.e(TAG, "Cannot render banner ad. Please define a valid spot id on the AdMob UI.");
       return;
     }
 
+    InneractiveAdManager.initialize(context, keyAppId, new OnFyberMarketplaceInitializedListener() {
+      @Override
+      public void onFyberMarketplaceInitialized(FyberInitStatus fyberInitStatus) {
+        if (fyberInitStatus == FyberInitStatus.FAILED_NO_KITS_DETECTED || fyberInitStatus == FyberInitStatus.INVALID_APP_ID) {
+          mMediationBannerListener.onAdFailedToLoad(FyberMediationAdapter.this, AdRequest.ERROR_CODE_NETWORK_ERROR);
+        } else {
+          postInitializeRequestBanner(spotId, context);
+        }
+      }
+    });
+
+  }
+
+  private void postInitializeRequestBanner(String spotId, Context context) {
     mBannerSpot = InneractiveAdSpotManager.get().createSpot();
     mBannerSpot.setMediationName(MEDIATOR_NAME);
 
@@ -273,6 +269,7 @@ public class FyberMediationAdapter extends Adapter
     InneractiveAdRequest request = new InneractiveAdRequest(spotId);
     mBannerSpot.requestAd(request);
   }
+
 
   @Override
   public View getBannerView() {
@@ -330,6 +327,8 @@ public class FyberMediationAdapter extends Adapter
 
         InneractiveAdViewEventsListener listener = createFyberAdViewListener();
         controller.setEventsListener(listener);
+        // Bind the wrapper view.
+        controller.bindView(mBannerWrapperView);
         mMediationBannerListener.onAdLoaded(FyberMediationAdapter.this);
       }
 
@@ -357,11 +356,6 @@ public class FyberMediationAdapter extends Adapter
    */
   @NonNull
   private InneractiveAdViewEventsListener createFyberAdViewListener() {
-    InneractiveAdViewUnitController controller =
-        (InneractiveAdViewUnitController) mBannerSpot.getSelectedUnitController();
-
-    // Bind the wrapper view.
-    controller.bindView(mBannerWrapperView);
 
     return new InneractiveAdViewEventsListenerAdapter() {
       @Override
@@ -370,18 +364,34 @@ public class FyberMediationAdapter extends Adapter
       }
 
       @Override
-      public void onAdClicked(InneractiveAdSpot adSpot) {
-        mMediationBannerListener.onAdClicked(FyberMediationAdapter.this);
+      public void onAdExpanded(InneractiveAdSpot inneractiveAdSpot) {
+        super.onAdExpanded(inneractiveAdSpot);
         mMediationBannerListener.onAdOpened(FyberMediationAdapter.this);
       }
 
       @Override
-      public void onAdWillCloseInternalBrowser(InneractiveAdSpot adSpot) {
+      public void onAdCollapsed(InneractiveAdSpot inneractiveAdSpot) {
+        super.onAdCollapsed(inneractiveAdSpot);
+        mMediationBannerListener.onAdClosed(FyberMediationAdapter.this);
+      }
+
+      @Override
+      public void onAdClicked(InneractiveAdSpot adSpot) {
+        mMediationBannerListener.onAdClicked(FyberMediationAdapter.this);
+        //we call ad opened since we open an "overlay" - our internal browser activity.
+        mMediationBannerListener.onAdOpened(FyberMediationAdapter.this);
+      }
+
+      @Override
+      public void onAdWillCloseInternalBrowser(InneractiveAdSpot inneractiveAdSpot) {
+        super.onAdWillCloseInternalBrowser(inneractiveAdSpot);
         mMediationBannerListener.onAdClosed(FyberMediationAdapter.this);
       }
 
       @Override
       public void onAdWillOpenExternalApp(InneractiveAdSpot adSpot) {
+        //https://ads-developers.googleblog.com/2014/05/google-mobile-ads-sdk-note-on-ad-click.html
+        //note - we are missing an ad closed when the app is returned to foreground, and that's why we don't call adOpened here.
         mMediationBannerListener.onAdLeftApplication(FyberMediationAdapter.this);
       }
     };
@@ -391,11 +401,11 @@ public class FyberMediationAdapter extends Adapter
    * {@link MediationInterstitialAdapter} implementation.
    */
   @Override
-  public void requestInterstitialAd(Context context,
-      final MediationInterstitialListener mediationInterstitialListener,
-      Bundle serverParameters,
-      MediationAdRequest mediationAdRequest,
-      Bundle mediationExtras) {
+  public void requestInterstitialAd(final Context context,
+                                    final MediationInterstitialListener mediationInterstitialListener,
+                                    Bundle serverParameters,
+                                    MediationAdRequest mediationAdRequest,
+                                    Bundle mediationExtras) {
 
     mMediationInterstitialListener = mediationInterstitialListener;
 
@@ -406,18 +416,31 @@ public class FyberMediationAdapter extends Adapter
       return;
     }
 
-    InneractiveAdManager.initialize(context, keyAppId);
-
     // Check that we got a valid spot id from the server.
-    String spotId = serverParameters.getString(FyberMediationAdapter.KEY_SPOT_ID);
+    final String spotId = serverParameters.getString(FyberMediationAdapter.KEY_SPOT_ID);
     if (TextUtils.isEmpty(spotId)) {
       Log.w(TAG, "Cannot render interstitial ad. " +
-          "Please define a valid spot id on the AdMob UI.");
+              "Please define a valid spot id on the AdMob UI.");
       mMediationInterstitialListener.onAdFailedToLoad(this,
-          AdRequest.ERROR_CODE_INVALID_REQUEST);
+              AdRequest.ERROR_CODE_INVALID_REQUEST);
       return;
     }
 
+    InneractiveAdManager.initialize(context, keyAppId, new OnFyberMarketplaceInitializedListener() {
+
+      @Override
+      public void onFyberMarketplaceInitialized(FyberInitStatus fyberInitStatus) {
+        if (fyberInitStatus == FyberInitStatus.FAILED_NO_KITS_DETECTED || fyberInitStatus == FyberInitStatus.INVALID_APP_ID) {
+          mMediationInterstitialListener.onAdFailedToLoad(FyberMediationAdapter.this, AdRequest.ERROR_CODE_NETWORK_ERROR);
+        } else {
+          postInitializeRequestInterstitial(spotId, context);
+        }
+      }
+
+    });
+  }
+
+  private void postInitializeRequestInterstitial(String spotId, Context context) {
     // Cache the context for showInterstitial.
     mInterstitialContext = new WeakReference<>(context);
 
@@ -433,6 +456,7 @@ public class FyberMediationAdapter extends Adapter
     InneractiveAdRequest request = new InneractiveAdRequest(spotId);
     mInterstitialSpot.requestAd(request);
   }
+
 
   @Override
   public void showInterstitial() {
@@ -521,5 +545,6 @@ public class FyberMediationAdapter extends Adapter
       }
     };
   }
+
 
 }
