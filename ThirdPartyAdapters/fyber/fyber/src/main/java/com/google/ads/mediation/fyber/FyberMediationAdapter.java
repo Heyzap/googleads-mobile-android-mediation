@@ -380,6 +380,14 @@ public class FyberMediationAdapter extends Adapter
       @Override
       public void onAdClicked(InneractiveAdSpot adSpot) {
         mMediationBannerListener.onAdClicked(FyberMediationAdapter.this);
+        //balanced in onAdWillCloseInternalBrowser
+        mMediationBannerListener.onAdOpened(FyberMediationAdapter.this);
+      }
+
+      @Override
+      public void onAdWillCloseInternalBrowser(InneractiveAdSpot inneractiveAdSpot) {
+        //balanced in onAdClicked
+        mMediationBannerListener.onAdClosed(FyberMediationAdapter.this);
       }
 
       @Override
@@ -526,10 +534,16 @@ public class FyberMediationAdapter extends Adapter
       @Override
       public void onAdClicked(InneractiveAdSpot adSpot) {
         mMediationInterstitialListener.onAdClicked(FyberMediationAdapter.this);
+        mMediationInterstitialListener.onAdOpened(FyberMediationAdapter.this);
       }
 
       @Override
       public void onAdDismissed(InneractiveAdSpot adSpot) {
+        mMediationInterstitialListener.onAdClosed(FyberMediationAdapter.this);
+      }
+
+      @Override
+      public void onAdWillCloseInternalBrowser(InneractiveAdSpot inneractiveAdSpot) {
         mMediationInterstitialListener.onAdClosed(FyberMediationAdapter.this);
       }
 

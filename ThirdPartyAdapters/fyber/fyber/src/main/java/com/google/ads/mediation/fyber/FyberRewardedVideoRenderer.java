@@ -118,8 +118,6 @@ public class FyberRewardedVideoRenderer implements MediationRewardedAd {
         new InneractiveFullscreenAdEventsListenerAdapter() {
           @Override
           public void onAdImpression(InneractiveAdSpot inneractiveAdSpot) {
-            mRewardedAdCallback.onAdOpened();
-
             // Code review note: Report video start should be called before reporting ad impression
             if (isVideoAdAvailable(controller)) {
               mRewardedAdCallback.onVideoStart();
@@ -131,12 +129,16 @@ public class FyberRewardedVideoRenderer implements MediationRewardedAd {
           @Override
           public void onAdClicked(InneractiveAdSpot inneractiveAdSpot) {
             mRewardedAdCallback.reportAdClicked();
+            mRewardedAdCallback.onAdOpened();
+          }
+
+          @Override
+          public void onAdWillCloseInternalBrowser(InneractiveAdSpot inneractiveAdSpot) {
+            mRewardedAdCallback.onAdClosed();
           }
 
           @Override
           public void onAdDismissed(InneractiveAdSpot inneractiveAdSpot) {
-            mRewardedAdCallback.onAdClosed();
-
             // Check for the returned ad type to send back the reward callback properly.
             // For video ads, the reward is earned only if the video is completed.
             // For Display ads, the reward is earned when the ad is dismissed.
